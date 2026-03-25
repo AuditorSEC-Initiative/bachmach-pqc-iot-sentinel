@@ -1,0 +1,61 @@
+name: CI
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+
+jobs:
+  build-and-test:
+    name: Build & Benchmark
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Install build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y cmake ninja-build gcc-arm-none-eabi
+
+      - name: Clone liboqs
+        run: git clone --depth 1 https://github.com/open-quantum-safe/liboqs.git
+
+      - name: Build liboqs (host)
+        run: |
+          cd liboqs
+          mkdir build && cd build
+          cmake -DOQS_USE_OPENSSL=OFF -GNinja ..
+          ninja bench_kem bench_sig
+
+      - name: Run ML-KEM-768 benchmark
+        run: |
+          cd liboqs/build
+          ./bench_kem ML-KEM-768 | tee kem-results.txt
+        continue-on-error: true
+
+      - name: Run ML-DSA-65 benchmark
+        run: |
+          cd liboqs/build
+          ./bench_sig ML-DSA-65 | tee sig-results.txt
+        continue-on-error: true
+
+      - name: Upload benchmark results
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: benchmark-results
+          path: liboqs/build/*-results.txt
+
+  markdown-lint:
+    name: Markdown Lint
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Lint Markdown
+        uses: DavidAnson/markdownlint-cli2-action@v16
+        with:
+          globs: '**/*.md'
+        continue-on-error: true
